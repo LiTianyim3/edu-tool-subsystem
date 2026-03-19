@@ -22,6 +22,9 @@
           <li>📊 成绩统计与可视化</li>
           <li>👥 班级管理</li>
         </ul>
+        <button class="btn-primary" @click="router.push('/teacher/assignments')" style="margin-top:20px">
+          进入作业管理 →
+        </button>
       </div>
     </div>
   </div>

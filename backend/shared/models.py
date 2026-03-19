@@ -91,6 +91,7 @@ class Assignment(Base):
     class_ = relationship("Class", back_populates="assignments")
     rule = relationship("GradingRule", back_populates="assignments")
     submissions = relationship("Submission", back_populates="assignment")
+    file_path = Column(String(512), nullable=True)
 
 
 class Submission(Base):

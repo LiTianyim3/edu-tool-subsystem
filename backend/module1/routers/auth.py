@@ -29,8 +29,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     )
     db.add(user)
     db.flush()
-    if body.role == "student" and body.student_no:
-        db.add(StudentProfile(user_id=user.id, class_id=1, student_no=body.student_no))
+    pass
     db.commit()
     db.refresh(user)
     return user

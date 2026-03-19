@@ -4,6 +4,9 @@ import ChangePasswordView from '@/views/ChangePasswordView.vue'
 import TeacherDashboard from '@/views/TeacherDashboard.vue'
 import StudentDashboard from '@/views/StudentDashboard.vue'
 import ForgotPasswordView from '@/views/ForgotPasswordView.vue'
+import JoinClassView from '@/views/student/JoinClassView.vue'
+import TeacherAssignmentView from '@/views/teacher/AssignmentView.vue'
+import StudentAssignmentView from '@/views/student/AssignmentView.vue'
 
 const routes = [
   { path: '/', redirect: '/login' },
@@ -12,6 +15,9 @@ const routes = [
   { path: '/change-password', component: ChangePasswordView, meta: { requiresAuth: true } },
   { path: '/teacher/dashboard', component: TeacherDashboard, meta: { requiresAuth: true, role: 'teacher' } },
   { path: '/student/dashboard', component: StudentDashboard, meta: { requiresAuth: true, role: 'student' } },
+  { path: '/student/join-class', component: JoinClassView, meta: { requiresAuth: true, role: 'student' } },
+  { path: '/teacher/assignments', component: TeacherAssignmentView, meta: { requiresAuth: true, role: 'teacher' } },
+{ path: '/student/assignments', component: StudentAssignmentView, meta: { requiresAuth: true, role: 'student' } },
 ]
 
 const router = createRouter({

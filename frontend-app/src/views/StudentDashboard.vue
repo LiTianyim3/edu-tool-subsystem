@@ -22,6 +22,9 @@
           <li>✋ 课堂签到与互动</li>
           <li>📈 个人学情分析</li>
         </ul>
+        <button class="btn-primary" @click="router.push('/student/assignments')" style="margin-top:20px">
+          查看我的作业
+        </button>
       </div>
     </div>
   </div>
