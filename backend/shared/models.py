@@ -28,7 +28,7 @@ class User(Base):
     username = Column(String(64), unique=True, nullable=False, index=True)
     email = Column(String(128), unique=True, nullable=False)
     hashed_password = Column(String(256), nullable=False)
-    role = Column(Enum(RoleEnum), nullable=False)
+    role = Column(String(20), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     classes = relationship("Class", back_populates="teacher")

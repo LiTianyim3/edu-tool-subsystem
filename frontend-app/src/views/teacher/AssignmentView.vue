@@ -51,12 +51,14 @@
             </div>
             <div v-if="a.description" class="assignment-desc">{{ a.description }}</div>
             <div v-if="a.file_path" class="assignment-meta">
-              📎 
+              📎
               <a
                 :href="'http://localhost:8000/' + a.file_path.replace(/\\/g, '/')"
                 target="_blank"
                 style="color:#2563EB"
-              >查看作业附件</a>
+              >
+                查看作业附件
+              </a>
             </div>
             <div class="assignment-actions">
               <button class="btn-outline" @click="viewSubmissions(a)">查看提交</button>
@@ -75,52 +77,76 @@
           <span>{{ currentAssignment?.title }} · 提交情况</span>
           <button class="close-btn" @click="showSubmissions = false">✕</button>
         </div>
+
         <div v-if="submissions.length === 0" class="empty-hint">暂无学生提交</div>
-        <table v-else class="sub-table">
-          <thead>
-            <tr>
-              <th>学生</th>
-              <th>学号</th>
-              <th>附件</th>
-              <th>提交时间</th>
-              <th>迟交</th>
-              <th>状态</th>
-              <th>分数</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="s in submissions" :key="s.submission_id">
-              <td>{{ s.student_name }}</td>
-              <td>{{ s.student_no }}</td>
-              <td>
-                <template v-if="s.file_path">
-                  <a
-                    :href="'http://localhost:8000/' + s.file_path.replace(/\\/g, '/')"
-                    target="_blank"
-                    class="btn-sm file-link"
-                  >查看文件</a>
-                </template>
-                <span v-else style="color:#94a3b8">无附件</span>
-              </td>
-              <td>{{ formatDate(s.submitted_at) }}</td>
-              <td>{{ s.is_late ? '⚠️ 是' : '否' }}</td>
-              <td>{{ statusLabel(s.status) }}</td>
-              <td>
-                <input
-                  v-if="editingId === s.submission_id"
-                  v-model="editScore"
-                  type="number" style="width:60px"
-                />
-                <span v-else>{{ s.final_score ?? '-' }}</span>
-              </td>
-              <td>
-                <button v-if="editingId !== s.submission_id" class="btn-sm" @click="startEdit(s)">改分</button>
-                <button v-else class="btn-sm green" @click="saveScore(s.submission_id)">保存</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+
+        <template v-else>
+          <!-- 一键AI批改按钮 -->
+          <div style="margin-bottom:12px;display:flex;justify-content:flex-end;">
+            <button class="btn-ai" @click="aiGradeAll" :disabled="aiLoading">
+              {{ aiLoading ? '🤖 AI批改中...' : '🤖 一键AI批改' }}
+            </button>
+          </div>
+
+          <table class="sub-table">
+            <thead>
+              <tr>
+                <th>学生</th>
+                <th>学号</th>
+                <th>附件</th>
+                <th>提交时间</th>
+                <th>迟交</th>
+                <th>状态</th>
+                <th>AI评语</th>
+                <th>分数</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="s in submissions" :key="s.submission_id">
+                <td>{{ s.student_name }}</td>
+                <td>{{ s.student_no }}</td>
+                <td>
+                  <template v-if="s.file_path">
+                    <a
+                      :href="'http://localhost:8000/' + s.file_path.replace(/\\/g, '/')"
+                      target="_blank"
+                      class="btn-sm file-link"
+                    >
+                      查看文件
+                    </a>
+                  </template>
+                  <span v-else style="color:#94a3b8">无附件</span>
+                </td>
+                <td>{{ formatDate(s.submitted_at) }}</td>
+                <td>{{ s.is_late ? '⚠️ 是' : '否' }}</td>
+                <td>{{ statusLabel(s.status) }}</td>
+                <td style="max-width:180px;font-size:12px;color:#475569;line-height:1.5">
+                  <span v-if="s.ai_comment">{{ s.ai_comment }}</span>
+                  <span v-else style="color:#94a3b8">-</span>
+                </td>
+                <td>
+                  <div v-if="s.ai_score !== null && s.ai_score !== undefined" style="font-size:11px;color:#64748b;margin-bottom:2px">
+                    AI建议：{{ s.ai_score }}
+                  </div>
+                  <input
+                    v-if="editingId === s.submission_id"
+                    v-model="editScore"
+                    type="number" style="width:60px"
+                  />
+                  <span v-else>{{ s.final_score ?? '-' }}</span>
+                </td>
+                <td>
+                  <div style="display:flex;gap:4px;flex-wrap:wrap">
+                    <button class="btn-sm ai-btn" @click="aiGradeSingle(s)" :disabled="aiLoading">AI批改</button>
+                    <button v-if="editingId !== s.submission_id" class="btn-sm" @click="startEdit(s)">改分</button>
+                    <button v-else class="btn-sm green" @click="saveScore(s.submission_id)">保存</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
       </div>
     </div>
 
@@ -165,6 +191,13 @@
         <div class="field">
           <label>满分分值</label>
           <input v-model="newAssignment.max_score" type="number" min="1" max="100" />
+        </div>
+        <div class="field">
+          <label>评分规则（选填，可设置迟交上限）</label>
+          <select v-model="selectedRuleId">
+            <option :value="null">-- 使用默认规则 --</option>
+            <option v-for="r in rules" :key="r.id" :value="r.id">{{ r.name }}（满分{{ r.max_score }} / 迟交上限 {{ r.late_score }}）</option>
+          </select>
         </div>
         <div class="field">
           <label>附件（选填）</label>
@@ -214,11 +247,20 @@ const newAssignment = reactive({ title: '', description: '', deadline: '', max_s
 const assignmentError = ref('')
 const assignmentLoading = ref(false)
 const assignmentFile = ref(null)
+const rules = ref([])
+const selectedRuleId = ref(null)
 
 const editingId = ref(null)
 const editScore = ref(0)
+const aiLoading = ref(false)
 
 onMounted(loadClasses)
+onMounted(async ()=>{
+  try{
+    const r = await api.get('/api/v1/assignments/rules')
+    rules.value = r.data
+  }catch(e){ /* ignore */ }
+})
 
 async function loadClasses() {
   const res = await api.get('/api/v1/classes/my')
@@ -266,6 +308,7 @@ async function createAssignment() {
     if (assignmentFile.value) {
       formData.append('file', assignmentFile.value)
     }
+    if (selectedRuleId.value) formData.append('rule_id', selectedRuleId.value)
     await api.post('/api/v1/assignments/', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
@@ -296,6 +339,34 @@ async function saveScore(id) {
   await api.put(`/api/v1/assignments/submissions/${id}/score`, { final_score: Number(editScore.value) })
   editingId.value = null
   await viewSubmissions(currentAssignment.value)
+}
+
+async function aiGradeSingle(s) {
+  aiLoading.value = true
+  try {
+    const res = await api.post(`/api/v1/assignments/submissions/${s.submission_id}/ai-grade`)
+    s.ai_score = res.data.score
+    s.ai_comment = res.data.comment
+    s.status = 'ai_done'
+    editingId.value = s.submission_id
+    editScore.value = res.data.score
+  } catch (err) {
+    alert(err.response?.data?.detail || 'AI批改失败')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+async function aiGradeAll() {
+  aiLoading.value = true
+  try {
+    await api.post(`/api/v1/assignments/${currentAssignment.value.id}/ai-grade-all`)
+    await viewSubmissions(currentAssignment.value)
+  } catch (err) {
+    alert(err.response?.data?.detail || '批量批改失败')
+  } finally {
+    aiLoading.value = false
+  }
 }
 
 function logout() { localStorage.clear(); router.push('/login') }
@@ -338,7 +409,7 @@ function statusLabel(s) {
 .empty-hint { font-size: 14px; color: #94a3b8; padding: 20px 0; }
 .empty-hint.center { text-align: center; padding-top: 100px; }
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 16px; padding: 28px; width: 90%; max-width: 720px; max-height: 80vh; overflow-y: auto; }
+.modal { background: #fff; border-radius: 16px; padding: 28px; width: 90%; max-width: 860px; max-height: 80vh; overflow-y: auto; }
 .modal.small { max-width: 440px; }
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 16px; font-weight: 600; color: #1e293b; }
 .close-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; }
@@ -348,7 +419,7 @@ function statusLabel(s) {
 .field input:focus, .field textarea:focus { border-color: #2563EB; }
 .sub-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .sub-table th { background: #f8fafc; padding: 10px 12px; text-align: left; color: #374151; font-weight: 500; }
-.sub-table td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; color: #475569; }
+.sub-table td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; color: #475569; vertical-align: top; }
 .btn-primary { padding: 9px 18px; background: #2563EB; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; font-family: inherit; }
 .btn-primary:hover { background: #1d4ed8; }
 .btn-primary.full { width: 100%; padding: 12px; font-size: 15px; }
@@ -357,6 +428,12 @@ function statusLabel(s) {
 .btn-danger { padding: 7px 14px; border: none; border-radius: 8px; background: #fee2e2; color: #dc2626; font-size: 13px; cursor: pointer; font-family: inherit; }
 .btn-sm { padding: 4px 10px; border: 1.5px solid #e2e8f0; border-radius: 6px; background: none; color: #475569; font-size: 12px; cursor: pointer; font-family: inherit; }
 .btn-sm.green { border-color: #16a34a; color: #16a34a; }
+.btn-ai { padding: 8px 16px; background: #7c3aed; color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; font-family: inherit; transition: background 0.2s; }
+.btn-ai:hover:not(:disabled) { background: #6d28d9; }
+.btn-ai:disabled { opacity: 0.6; cursor: not-allowed; }
+.ai-btn { border-color: #7c3aed; color: #7c3aed; }
+.ai-btn:hover:not(:disabled) { background: #f5f3ff; }
+.ai-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .file-link { color: #2563EB; border-color: #2563EB; text-decoration: none; display: inline-block; }
 .file-link:hover { background: #eff6ff; }
 .file-label { display: block; padding: 10px 14px; border: 2px dashed #cbd5e1; border-radius: 10px; font-size: 13px; color: #64748b; cursor: pointer; transition: border-color 0.2s; }

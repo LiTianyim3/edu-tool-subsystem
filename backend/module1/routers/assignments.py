@@ -8,6 +8,10 @@ from datetime import datetime
 from typing import Optional
 import os, shutil, uuid
 from datetime import timezone
+from module1.services.ai_grader import ai_grade
+from shared.models import AIGradingResult
+
+AI_MODEL = os.getenv("AI_MODEL", "deepseek-ai/DeepSeek-V3")
 
 router = APIRouter(prefix="/api/v1/assignments", tags=["作业管理"])
 
@@ -73,6 +77,7 @@ async def create_assignment(
     description: Optional[str] = Form(None),
     deadline: str = Form(...),
     max_score: int = Form(100),
+    rule_id: Optional[int] = Form(None),
     file: Optional[UploadFile] = File(None),
     current_user: User = Depends(require_teacher),
     db: Session = Depends(get_db),
@@ -107,6 +112,7 @@ async def create_assignment(
         deadline=deadline_dt.replace(tzinfo=None),
         max_score=max_score,
         file_path=file_path,
+        rule_id=rule_id,
     )
     db.add(assignment)
     db.commit()
@@ -272,6 +278,8 @@ def list_submissions(
             "final_score": s.final_score,
             "status": s.status,
             "file_path": s.file_path,
+            "ai_score": s.ai_result.ai_score if s.ai_result else None,
+            "ai_comment": s.ai_result.ai_comment if s.ai_result else None,
         }
         for s in submissions
     ]
@@ -331,3 +339,119 @@ def assignment_stats(
         "total": total,
         "graded": len(scores),
     }
+
+# ── 教师：AI批改单个提交 ──────────────────────────────────────────
+@router.post("/submissions/{submission_id}/ai-grade")
+async def ai_grade_single(
+    submission_id: int,
+    current_user: User = Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    if not submission:
+        raise HTTPException(404, "提交记录不存在")
+
+    assignment = submission.assignment
+    rule = assignment.rule
+
+    late_score = rule.late_score if rule else int(assignment.max_score * 0.6)
+
+
+
+    try:
+        print(f"[ai-grade start] submission_id={submission_id} teacher_path={assignment.file_path} student_path={submission.file_path}")
+        result = await ai_grade(
+            assignment_title=assignment.title,
+            assignment_desc=assignment.description or "",
+            max_score=assignment.max_score,
+            is_late=submission.is_late,
+            late_score=late_score,
+            teacher_file_path=assignment.file_path or "",   # 教师附件
+            student_file_path=submission.file_path or "",   # 学生提交
+        )
+        print(f"[ai-grade success] submission_id={submission_id} result={result}")
+    except Exception as e:
+        import traceback
+        print(f"[ai-grade error] submission_id={submission_id} error={e}")
+        traceback.print_exc()
+        raise HTTPException(500, f"AI批改失败：{str(e)}")
+
+    # 保存或更新 AI 批改结果
+    ai_result = db.query(AIGradingResult).filter(
+        AIGradingResult.submission_id == submission_id
+    ).first()
+
+    if ai_result:
+        ai_result.ai_score = result["score"]
+        ai_result.ai_comment = result["comment"]
+        ai_result.model_used = AI_MODEL
+    else:
+        ai_result = AIGradingResult(
+            submission_id=submission_id,
+            ai_score=result["score"],
+            ai_comment=result["comment"],
+            model_used=AI_MODEL,
+        )
+        db.add(ai_result)
+
+    submission.status = StatusEnum.ai_done
+    db.commit()
+
+    return {"score": result["score"], "comment": result["comment"]}
+
+
+# ── 教师：一键AI批改该作业所有提交 ───────────────────────────────
+@router.post("/{assignment_id}/ai-grade-all")
+async def ai_grade_all(
+    assignment_id: int,
+    current_user: User = Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(404, "作业不存在")
+
+    submissions = db.query(Submission).filter(
+        Submission.assignment_id == assignment_id
+    ).all()
+
+    if not submissions:
+        raise HTTPException(404, "该作业暂无提交")
+
+    rule = assignment.rule
+    late_score = rule.late_score if rule else int(assignment.max_score * 0.6)
+
+    results = []
+    for s in submissions:
+        
+        try:
+            result = await ai_grade(
+                assignment_title=assignment.title,
+                assignment_desc=assignment.description or "",
+                max_score=assignment.max_score,
+                is_late=s.is_late,
+                late_score=late_score,
+                teacher_file_path=assignment.file_path or "",
+                student_file_path=s.file_path or "",
+            )
+            ai_result = db.query(AIGradingResult).filter(
+                AIGradingResult.submission_id == s.id
+            ).first()
+            if ai_result:
+                ai_result.ai_score = result["score"]
+                ai_result.ai_comment = result["comment"]
+                ai_result.model_used = AI_MODEL
+            else:
+                db.add(AIGradingResult(
+                    submission_id=s.id,
+                    ai_score=result["score"],
+                    ai_comment=result["comment"],
+                    model_used=AI_MODEL,
+                ))
+            s.status = StatusEnum.ai_done
+            results.append({"submission_id": s.id, "score": result["score"], "comment": result["comment"]})
+        except Exception as e:
+            results.append({"submission_id": s.id, "error": str(e)})
+
+    db.commit()
+    return {"total": len(submissions), "results": results}
