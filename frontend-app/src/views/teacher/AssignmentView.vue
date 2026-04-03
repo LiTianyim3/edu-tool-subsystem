@@ -175,46 +175,123 @@
           <span>发布作业</span>
           <button class="close-btn" @click="showCreateAssignment = false">✕</button>
         </div>
+        
+        <!-- 标签页：新建/从模板 -->
+        <div class="tab-bar-modal">
+          <button :class="['tab-btn', { active: assignmentMode === 'new' }]" @click="assignmentMode = 'new'">✏️ 新建作业</button>
+          <button :class="['tab-btn', { active: assignmentMode === 'template' }]" @click="loadTemplates(); assignmentMode = 'template'">📋 从模板选择</button>
+        </div>
+        
         <div v-if="assignmentError" class="alert error">{{ assignmentError }}</div>
-        <div class="field">
-          <label>作业标题</label>
-          <input v-model="newAssignment.title" type="text" placeholder="请输入作业标题" />
-        </div>
-        <div class="field">
-          <label>作业描述（选填）</label>
-          <textarea v-model="newAssignment.description" placeholder="作业要求说明..." rows="3"></textarea>
-        </div>
-        <div class="field">
-          <label>截止时间</label>
-          <input v-model="newAssignment.deadline" type="datetime-local" />
-        </div>
-        <div class="field">
-          <label>满分分值</label>
-          <input v-model="newAssignment.max_score" type="number" min="1" max="100" />
-        </div>
-        <div class="field">
-          <label>评分规则（选填，可设置迟交上限）</label>
-          <select v-model="selectedRuleId">
-            <option :value="null">-- 使用默认规则 --</option>
-            <option v-for="r in rules" :key="r.id" :value="r.id">{{ r.name }}（满分{{ r.max_score }} / 迟交上限 {{ r.late_score }}）</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>附件（选填）</label>
-          <input
-            id="assignment-file"
-            type="file"
-            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.ppt,.pptx"
-            style="display:none"
-            @change="onAssignmentFileChange"
-          />
-          <label for="assignment-file" class="file-label">
-            {{ assignmentFile ? assignmentFile.name : '点击上传附件（PDF/Word/PPT/图片）' }}
-          </label>
-        </div>
-        <button class="btn-primary full" @click="createAssignment" :disabled="assignmentLoading">
-          {{ assignmentLoading ? '发布中...' : '确认发布' }}
-        </button>
+        
+        <!-- 新建作业模式 -->
+        <template v-if="assignmentMode === 'new'">
+          <div class="field">
+            <label>作业标题</label>
+            <input v-model="newAssignment.title" type="text" placeholder="请输入作业标题" />
+          </div>
+          <div class="field">
+            <label>作业描述（选填）</label>
+            <textarea v-model="newAssignment.description" placeholder="作业要求说明..." rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label>截止时间</label>
+            <input v-model="newAssignment.deadline" type="datetime-local" />
+          </div>
+          <div class="field">
+            <label>满分分值</label>
+            <input v-model="newAssignment.max_score" type="number" min="1" max="100" />
+          </div>
+          <div class="field">
+            <label>评分规则（选填，可设置迟交上限）</label>
+            <select v-model="selectedRuleId">
+              <option :value="null">-- 使用默认规则 --</option>
+              <option v-for="r in rules" :key="r.id" :value="r.id">{{ r.name }}（满分{{ r.max_score }} / 迟交上限 {{ r.late_score }}）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>附件（选填）</label>
+            <input
+              id="assignment-file"
+              type="file"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.ppt,.pptx"
+              style="display:none"
+              @change="onAssignmentFileChange"
+            />
+            <label for="assignment-file" class="file-label">
+              {{ assignmentFile ? assignmentFile.name : '点击上传附件（PDF/Word/PPT/图片）' }}
+            </label>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn-primary full" @click="createAssignment" :disabled="assignmentLoading">
+              {{ assignmentLoading ? '发布中...' : '确认发布' }}
+            </button>
+            <button class="btn-outline full" @click="saveCurrentAsTemplate" :disabled="assignmentLoading">
+              💾 保存为模板
+            </button>
+          </div>
+        </template>
+        
+        <!-- 从模板选择模式 -->
+        <template v-if="assignmentMode === 'template'">
+          <div v-if="templates.length === 0" class="empty-hint">你还没有保存任何作业模板</div>
+          <template v-else>
+            <div class="template-list">
+              <div v-for="t in templates" :key="t.id" :class="['template-item', { selected: selectedTemplate?.id === t.id }]" @click="selectedTemplate = t">
+                <div class="template-title">{{ t.title }}</div>
+                <div class="template-meta">{{ t.description?.substring(0, 50) || '无描述' }}{{ t.description?.length > 50 ? '...' : '' }}</div>
+              </div>
+            </div>
+            
+            <!-- 选中模板后显示详情（不可编辑） -->
+            <template v-if="selectedTemplate">
+              <div style="background: #f8fafc; padding: 16px; border-radius: 10px; margin: 16px 0;">
+                <div class="field">
+                  <label>作业标题（来自模板）</label>
+                  <input :value="selectedTemplate.title" type="text" disabled style="background: #e2e8f0; cursor: not-allowed;" />
+                </div>
+                <div class="field">
+                  <label>作业描述（来自模板）</label>
+                  <textarea :value="selectedTemplate.description || '（无）'" rows="3" disabled style="background: #e2e8f0; cursor: not-allowed;"></textarea>
+                </div>
+                <div v-if="selectedTemplate.file_path" class="field">
+                  <label>附件（来自模板）</label>
+                  <div style="padding: 10px 14px; background: #e2e8f0; border-radius: 8px; font-size: 13px; color: #64748b;">
+                    📎 {{ selectedTemplate.file_path.split('/').pop() }}
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 需要填的字段 -->
+              <div style="background: #eff6ff; padding: 16px; border-radius: 10px;">
+                <div class="field">
+                  <label>📅 截止时间 <span style="color: #dc2626;">*</span></label>
+                  <input v-model="templateDeadline" type="datetime-local" />
+                </div>
+                <div class="field">
+                  <label>满分分值</label>
+                  <input v-model="templateMaxScore" type="number" min="1" max="100" placeholder="如: 100" />
+                </div>
+                <div class="field">
+                  <label>评分规则（选填，可设置迟交上限）</label>
+                  <select v-model="templateSelectedRuleId">
+                    <option :value="null">-- 使用默认规则 --</option>
+                    <option v-for="r in rules" :key="r.id" :value="r.id">{{ r.name }}（满分{{ r.max_score }} / 迟交上限 {{ r.late_score }}）</option>
+                  </select>
+                </div>
+              </div>
+            </template>
+            
+            <div style="display: flex; gap: 10px; margin-top: 16px;">
+              <button class="btn-primary full" @click="createAssignmentFromTemplate" :disabled="!selectedTemplate || !templateDeadline || assignmentLoading">
+                {{ assignmentLoading ? '创建中...' : '✅ 从模板创建' }}
+              </button>
+              <button class="btn-outline full" @click="deleteSelectedTemplate" :disabled="!selectedTemplate || assignmentLoading">
+                🗑️ 删除模板
+              </button>
+            </div>
+          </template>
+        </template>
       </div>
     </div>
 
@@ -238,6 +315,13 @@ const currentAssignment = ref(null)
 const showCreateClass = ref(false)
 const showCreateAssignment = ref(false)
 const showSubmissions = ref(false)
+
+const assignmentMode = ref('new')
+const templates = ref([])
+const selectedTemplate = ref(null)
+const templateDeadline = ref('')
+const templateMaxScore = ref('')
+const templateSelectedRuleId = ref(null)
 
 const newClassName = ref('')
 const classError = ref('')
@@ -369,6 +453,92 @@ async function aiGradeAll() {
   }
 }
 
+// ── 模板管理函数 ────────────────────────────────────────────────
+async function loadTemplates() {
+  try {
+    const res = await api.get('/api/v1/assignments/templates')
+    templates.value = res.data
+  } catch (err) {
+    console.error('加载模板失败', err)
+  }
+}
+
+async function createAssignmentFromTemplate() {
+  if (!selectedTemplate.value) {
+    assignmentError.value = '请选择模板'
+    return
+  }
+  if (!templateDeadline.value) {
+    assignmentError.value = '请选择截止时间'
+    return
+  }
+  assignmentLoading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('class_id', selectedClass.value.id)
+    formData.append('template_id', selectedTemplate.value.id)
+    formData.append('deadline', new Date(templateDeadline.value).toISOString())
+    formData.append('max_score', templateMaxScore.value)
+    if (templateSelectedRuleId.value) {
+      formData.append('rule_id', templateSelectedRuleId.value)
+    }
+    await api.post('/api/v1/assignments/from-template', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    showCreateAssignment.value = false
+    selectedTemplate.value = null
+    templateDeadline.value = ''
+    templateMaxScore.value = ''
+    templateSelectedRuleId.value = null
+    assignmentMode.value = 'new'
+    await selectClass(selectedClass.value)
+  } catch (err) {
+    assignmentError.value = err.response?.data?.detail || '从模板创建失败'
+  } finally {
+    assignmentLoading.value = false
+  }
+}
+
+async function saveCurrentAsTemplate() {
+  if (!newAssignment.title) {
+    assignmentError.value = '请先填写作业标题'
+    return
+  }
+  assignmentLoading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('title', newAssignment.title)
+    formData.append('description', newAssignment.description || '')
+    if (assignmentFile.value) {
+      formData.append('file', assignmentFile.value)
+    }
+    await api.post('/api/v1/assignments/templates', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    assignmentError.value = ''
+    alert('已保存为模板')
+  } catch (err) {
+    assignmentError.value = err.response?.data?.detail || '保存模板失败'
+  } finally {
+    assignmentLoading.value = false
+  }
+}
+
+async function deleteSelectedTemplate() {
+  if (!selectedTemplate.value) return
+  if (!confirm('确认删除该模板？')) return
+  assignmentLoading.value = true
+  try {
+    await api.delete(`/api/v1/assignments/templates/${selectedTemplate.value.id}`)
+    selectedTemplate.value = null
+    await loadTemplates()
+  } catch (err) {
+    assignmentError.value = err.response?.data?.detail || '删除失败'
+  } finally {
+    assignmentLoading.value = false
+  }
+}
+
 function logout() { localStorage.clear(); router.push('/login') }
 function isExpired(d) { return new Date(d) < new Date() }
 function formatDate(d) { return new Date(d).toLocaleString('zh-CN') }
@@ -379,6 +549,18 @@ function statusLabel(s) {
 
 <style scoped>
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* 模板管理样式 */
+.tab-bar-modal { display: flex; gap: 10px; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; }
+.tab-btn { padding: 10px 16px; border: none; background: none; color: #94a3b8; font-size: 14px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.tab-btn.active { color: #2563EB; border-bottom-color: #2563EB; }
+.tab-btn:hover { color: #475569; }
+.template-list { max-height: 300px; overflow-y: auto; margin-bottom: 16px; border: 1px solid #e2e8f0; border-radius: 10px; }
+.template-item { padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: all 0.2s; }
+.template-item:hover { background: #f8fafc; }
+.template-item.selected { background: #eff6ff; border-left: 4px solid #2563EB; padding-left: 12px; }
+.template-title { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 4px; }
+.template-meta { font-size: 12px; color: #64748b; }
+/* 原有样式 */
 .page { min-height: 100vh; background: #f0f4ff; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; }
 .header { background: #fff; padding: 0 32px; height: 60px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
 .header-left { display: flex; align-items: center; gap: 10px; }

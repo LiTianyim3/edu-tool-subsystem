@@ -122,3 +122,15 @@ class AIGradingResult(Base):
     graded_at = Column(DateTime, default=datetime.utcnow)
 
     submission = relationship("Submission", back_populates="ai_result")
+
+class AssignmentTemplate(Base):
+    __tablename__ = "assignment_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(256), nullable=False)
+    description = Column(Text, nullable=True)
+    file_path = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    teacher = relationship("User", foreign_keys=[teacher_id])

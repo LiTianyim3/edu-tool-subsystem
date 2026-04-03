@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from shared.database import get_db
-from shared.models import Assignment, Submission, GradingRule, Class, StudentProfile, User, StatusEnum
+from shared.models import Assignment, Submission, GradingRule, Class, StudentProfile, User, StatusEnum, AssignmentTemplate, AIGradingResult
 from shared.security import require_teacher, get_current_user
 from pydantic import BaseModel
 from datetime import datetime
@@ -9,7 +9,6 @@ from typing import Optional
 import os, shutil, uuid
 from datetime import timezone
 from module1.services.ai_grader import ai_grade
-from shared.models import AIGradingResult
 
 AI_MODEL = os.getenv("AI_MODEL", "deepseek-ai/DeepSeek-V3")
 
@@ -157,14 +156,25 @@ def list_assignments_by_class(
 # ── 学生：查看自己班级的作业列表 ──────────────────────────────────
 @router.get("/my")
 def my_assignments(
+    class_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     if current_user.role != "student":
         raise HTTPException(403, "仅学生可查看")
-    profile = db.query(StudentProfile).filter(StudentProfile.user_id == current_user.id).first()
-    if not profile:
+    
+    # 获取学生加入的所有班级
+    profiles = db.query(StudentProfile).filter(StudentProfile.user_id == current_user.id).all()
+    if not profiles:
         raise HTTPException(404, "请先加入班级")
+    
+    # 如果指定了 class_id，则使用该班级；否则使用第一个班级
+    if class_id:
+        profile = next((p for p in profiles if p.class_id == class_id), None)
+        if not profile:
+            raise HTTPException(403, "你不在该班级中")
+    else:
+        profile = profiles[0]
 
     assignments = db.query(Assignment).filter(Assignment.class_id == profile.class_id).all()
     result = []
@@ -455,3 +465,162 @@ async def ai_grade_all(
 
     db.commit()
     return {"total": len(submissions), "results": results}
+
+
+# ── 作业模板管理接口 ──────────────────────────────────────────────
+
+# ── 教师：创建作业模板 ──────────────────────────────────────────
+@router.post("/templates", status_code=201)
+async def create_template(
+    title: str = Form(...),
+    description: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    current_user: User = Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    if len(title.strip()) < 2:
+        raise HTTPException(400, "模板标题至少2个字符")
+
+    # 处理附件
+    file_path = None
+    if file and file.filename:
+        allowed = {".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".ppt", ".pptx"}
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in allowed:
+            raise HTTPException(400, f"不支持的文件类型")
+        filename = f"template_{uuid.uuid4().hex}{ext}"
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        with open(file_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+    template = AssignmentTemplate(
+        teacher_id=current_user.id,
+        title=title.strip(),
+        description=description,
+        file_path=file_path,
+    )
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+    return {
+        "id": template.id,
+        "title": template.title,
+        "description": template.description,
+        "file_path": template.file_path,
+        "created_at": template.created_at,
+    }
+
+
+# ── 教师：查看自己的所有作业模板 ────────────────────────────────
+@router.get("/templates")
+def list_templates(
+    current_user: User = Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    templates = db.query(AssignmentTemplate).filter(
+        AssignmentTemplate.teacher_id == current_user.id
+    ).order_by(AssignmentTemplate.created_at.desc()).all()
+    return [
+        {
+            "id": t.id,
+            "title": t.title,
+            "description": t.description,
+            "file_path": t.file_path,
+            "created_at": t.created_at,
+        }
+        for t in templates
+    ]
+
+
+# ── 教师：删除作业模板 ────────────────────────────────────────
+@router.delete("/templates/{template_id}")
+def delete_template(
+    template_id: int,
+    current_user: User = Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    template = db.query(AssignmentTemplate).filter(
+        AssignmentTemplate.id == template_id,
+        AssignmentTemplate.teacher_id == current_user.id
+    ).first()
+    if not template:
+        raise HTTPException(404, "模板不存在或无权限删除")
+    
+    # 删除附件文件
+    if template.file_path and os.path.exists(template.file_path):
+        try:
+            os.remove(template.file_path)
+        except:
+            pass
+    
+    db.delete(template)
+    db.commit()
+    return {"message": "模板已删除"}
+
+
+# ── 教师：从模板创建作业 ────────────────────────────────────────
+@router.post("/from-template")
+async def create_assignment_from_template(
+    class_id: int = Form(...),
+    template_id: int = Form(...),
+    deadline: str = Form(...),
+    max_score: Optional[int] = Form(None),
+    rule_id: Optional[int] = Form(None),
+    current_user: User = Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    """从模板快速创建作业，无需重复填写标题、描述、附件"""
+    
+    class_ = db.query(Class).filter(
+        Class.id == class_id,
+        Class.teacher_id == current_user.id
+    ).first()
+    if not class_:
+        raise HTTPException(404, "班级不存在或无权限")
+    
+    template = db.query(AssignmentTemplate).filter(
+        AssignmentTemplate.id == template_id,
+        AssignmentTemplate.teacher_id == current_user.id
+    ).first()
+    if not template:
+        raise HTTPException(404, "模板不存在或无权限")
+    
+    deadline_dt = datetime.fromisoformat(deadline.replace('Z', '+00:00'))
+    if deadline_dt.replace(tzinfo=None) <= datetime.utcnow():
+        raise HTTPException(400, "截止时间必须晚于当前时间")
+    
+    # 复制模板附件到新位置
+    new_file_path = template.file_path
+    if template.file_path and os.path.exists(template.file_path):
+        try:
+            ext = os.path.splitext(template.file_path)[1].lower()
+            filename = f"assignment_{uuid.uuid4().hex}{ext}"
+            new_file_path = os.path.join(UPLOAD_DIR, filename)
+            shutil.copy(template.file_path, new_file_path)
+        except:
+            new_file_path = template.file_path
+    
+    # 使用提供的 max_score，否则用模板的默认值
+    final_max_score = max_score if max_score is not None else template.max_score
+    
+    assignment = Assignment(
+        class_id=class_id,
+        title=template.title,
+        description=template.description,
+        deadline=deadline_dt.replace(tzinfo=None),
+        max_score=final_max_score,
+        file_path=new_file_path,
+        rule_id=rule_id,
+    )
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+    
+    return {
+        "id": assignment.id,
+        "title": assignment.title,
+        "deadline": assignment.deadline,
+        "max_score": assignment.max_score,
+        "file_path": assignment.file_path,
+        "message": "已从模板创建作业",
+    }

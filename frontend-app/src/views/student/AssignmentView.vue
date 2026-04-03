@@ -20,6 +20,15 @@
       </div>
 
       <template v-else>
+        <!-- 班级选择器 -->
+        <div class="class-selector" v-if="joinedClasses.length > 1">
+          <select v-model="selectedClassIndex" @change="switchClass" class="class-dropdown">
+            <option v-for="(c, idx) in joinedClasses" :key="idx" :value="idx">
+              {{ c.class_name }} · {{ c.teacher }}
+            </option>
+          </select>
+        </div>
+        
         <div class="class-info">班级：{{ classInfo.class_name }} · 教师：{{ classInfo.teacher }}</div>
 
         <div v-if="assignments.length === 0" class="empty-hint">暂无作业</div>
@@ -87,6 +96,8 @@ const router = useRouter()
 const username = localStorage.getItem('username')
 const assignments = ref([])
 const hasClass = ref(false)
+const joinedClasses = ref([])
+const selectedClassIndex = ref(0)
 const classInfo = ref({})
 const selectedFiles = reactive({})
 const uploading = reactive({})
@@ -97,6 +108,7 @@ onMounted(async () => {
     const res = await api.get('/api/v1/classes/joined')
     if (res.data.length > 0) {
       hasClass.value = true
+      joinedClasses.value = res.data
       classInfo.value = res.data[0]
       loadAssignments()
     }
@@ -104,8 +116,18 @@ onMounted(async () => {
 })
 
 async function loadAssignments() {
-  const res = await api.get('/api/v1/assignments/my')
+  const classId = classInfo.value.class_id
+  const res = await api.get('/api/v1/assignments/my', {
+    params: { class_id: classId }
+  })
   assignments.value = res.data
+}
+
+function switchClass() {
+  classInfo.value = joinedClasses.value[selectedClassIndex.value]
+  Object.keys(selectedFiles).forEach(k => delete selectedFiles[k])
+  Object.keys(uploadErrors).forEach(k => delete uploadErrors[k])
+  loadAssignments()
 }
 
 function onFileChange(e, assignmentId) {
@@ -148,6 +170,9 @@ function formatDate(d) { return new Date(d).toLocaleString('zh-CN') }
 .header-right { display: flex; align-items: center; gap: 12px; }
 .welcome { font-size: 14px; color: #64748b; }
 .main { max-width: 720px; margin: 0 auto; padding: 32px 20px; }
+.class-selector { margin-bottom: 16px; }
+.class-dropdown { width: 100%; padding: 10px 14px; border: 2px solid #16a34a; border-radius: 10px; font-size: 14px; color: #1e293b; font-family: inherit; cursor: pointer; background: #fff; }
+.class-dropdown:focus { outline: none; border-color: #22c55e; }
 .class-info { font-size: 14px; color: #64748b; margin-bottom: 20px; background: #fff; padding: 12px 16px; border-radius: 10px; }
 .assignment-card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 .assignment-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
