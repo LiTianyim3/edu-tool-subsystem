@@ -17,6 +17,7 @@ def _build_messages(
     max_score: int,
     is_late: bool,
     late_score: int,
+    grading_criteria: str,
     teacher_file_content: dict,
     student_file_content: dict,
 ) -> tuple[list, str]:
@@ -24,11 +25,12 @@ def _build_messages(
     构建发送给大模型的 messages，返回 (messages, model_to_use)
     """
     late_hint = f"\n注意：该作业为迟交，最高得分不超过 {late_score} 分。" if is_late else ""
+    criteria_hint = f"\n评分标准：\n{grading_criteria}" if grading_criteria else ""
 
     system_prompt = f"""你是一位严格但公正的教师，正在批改学生作业。
 作业标题：{assignment_title}
 作业说明：{assignment_desc or '无'}
-满分：{max_score} 分{late_hint}
+满分：{max_score} 分{late_hint}{criteria_hint}
 
 请综合教师提供的作业要求和学生提交的内容进行评分。
 必须严格按照以下 JSON 格式返回，不要有其他内容：
@@ -105,6 +107,7 @@ async def ai_grade(
     late_score: int,
     teacher_file_path: str = "",
     student_file_path: str = "",
+    grading_criteria: str = "",
 ) -> dict:
     """调用大模型批改作业，返回 {score, comment}"""
 
@@ -123,6 +126,7 @@ async def ai_grade(
         max_score=max_score,
         is_late=is_late,
         late_score=late_score,
+        grading_criteria=grading_criteria,
         teacher_file_content=teacher_content,
         student_file_content=student_content,
     )

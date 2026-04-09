@@ -76,7 +76,7 @@ async def create_assignment(
     description: Optional[str] = Form(None),
     deadline: str = Form(...),
     max_score: int = Form(100),
-    rule_id: Optional[int] = Form(None),
+    grading_criteria: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     current_user: User = Depends(require_teacher),
     db: Session = Depends(get_db),
@@ -110,8 +110,8 @@ async def create_assignment(
         description=description,
         deadline=deadline_dt.replace(tzinfo=None),
         max_score=max_score,
+        grading_criteria=grading_criteria,
         file_path=file_path,
-        rule_id=rule_id,
     )
     db.add(assignment)
     db.commit()
@@ -362,11 +362,7 @@ async def ai_grade_single(
         raise HTTPException(404, "提交记录不存在")
 
     assignment = submission.assignment
-    rule = assignment.rule
-
-    late_score = rule.late_score if rule else int(assignment.max_score * 0.6)
-
-
+    late_score = int(assignment.max_score * 0.6)
 
     try:
         print(f"[ai-grade start] submission_id={submission_id} teacher_path={assignment.file_path} student_path={submission.file_path}")
@@ -378,6 +374,7 @@ async def ai_grade_single(
             late_score=late_score,
             teacher_file_path=assignment.file_path or "",   # 教师附件
             student_file_path=submission.file_path or "",   # 学生提交
+            grading_criteria=assignment.grading_criteria or "",  # 教师的评分标准
         )
         print(f"[ai-grade success] submission_id={submission_id} result={result}")
     except Exception as e:
@@ -428,8 +425,7 @@ async def ai_grade_all(
     if not submissions:
         raise HTTPException(404, "该作业暂无提交")
 
-    rule = assignment.rule
-    late_score = rule.late_score if rule else int(assignment.max_score * 0.6)
+    late_score = int(assignment.max_score * 0.6)
 
     results = []
     for s in submissions:
@@ -443,6 +439,7 @@ async def ai_grade_all(
                 late_score=late_score,
                 teacher_file_path=assignment.file_path or "",
                 student_file_path=s.file_path or "",
+                grading_criteria=assignment.grading_criteria or "",  # 教师的评分标准
             )
             ai_result = db.query(AIGradingResult).filter(
                 AIGradingResult.submission_id == s.id
@@ -565,7 +562,7 @@ async def create_assignment_from_template(
     template_id: int = Form(...),
     deadline: str = Form(...),
     max_score: Optional[int] = Form(None),
-    rule_id: Optional[int] = Form(None),
+    grading_criteria: Optional[str] = Form(None),
     current_user: User = Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
@@ -600,8 +597,8 @@ async def create_assignment_from_template(
         except:
             new_file_path = template.file_path
     
-    # 使用提供的 max_score，否则用模板的默认值
-    final_max_score = max_score if max_score is not None else template.max_score
+    # 使用提供的 max_score，否则用默认值 100
+    final_max_score = max_score if max_score is not None else 100
     
     assignment = Assignment(
         class_id=class_id,
@@ -609,8 +606,8 @@ async def create_assignment_from_template(
         description=template.description,
         deadline=deadline_dt.replace(tzinfo=None),
         max_score=final_max_score,
+        grading_criteria=grading_criteria,
         file_path=new_file_path,
-        rule_id=rule_id,
     )
     db.add(assignment)
     db.commit()

@@ -203,11 +203,8 @@
             <input v-model="newAssignment.max_score" type="number" min="1" max="100" />
           </div>
           <div class="field">
-            <label>评分规则（选填，可设置迟交上限）</label>
-            <select v-model="selectedRuleId">
-              <option :value="null">-- 使用默认规则 --</option>
-              <option v-for="r in rules" :key="r.id" :value="r.id">{{ r.name }}（满分{{ r.max_score }} / 迟交上限 {{ r.late_score }}）</option>
-            </select>
+            <label>评分标准（选填，大模型批改时会参考）</label>
+            <textarea v-model="newAssignment.grading_criteria" placeholder="例如：1. 逻辑清晰（30分）；2. 代码规范（20分）；3. 功能完整（50分）..." rows="3"></textarea>
           </div>
           <div class="field">
             <label>附件（选填）</label>
@@ -273,11 +270,8 @@
                   <input v-model="templateMaxScore" type="number" min="1" max="100" placeholder="如: 100" />
                 </div>
                 <div class="field">
-                  <label>评分规则（选填，可设置迟交上限）</label>
-                  <select v-model="templateSelectedRuleId">
-                    <option :value="null">-- 使用默认规则 --</option>
-                    <option v-for="r in rules" :key="r.id" :value="r.id">{{ r.name }}（满分{{ r.max_score }} / 迟交上限 {{ r.late_score }}）</option>
-                  </select>
+                  <label>评分标准（选填，大模型批改时会参考）</label>
+                  <textarea v-model="templateGradingCriteria" placeholder="例如：1. 逻辑清晰（30分）；2. 代码规范（20分）；3. 功能完整（50分）..." rows="2"></textarea>
                 </div>
               </div>
             </template>
@@ -321,30 +315,22 @@ const templates = ref([])
 const selectedTemplate = ref(null)
 const templateDeadline = ref('')
 const templateMaxScore = ref('')
-const templateSelectedRuleId = ref(null)
+const templateGradingCriteria = ref('')
 
 const newClassName = ref('')
 const classError = ref('')
 const classLoading = ref(false)
 
-const newAssignment = reactive({ title: '', description: '', deadline: '', max_score: 100 })
+const newAssignment = reactive({ title: '', description: '', deadline: '', max_score: 100, grading_criteria: '' })
 const assignmentError = ref('')
 const assignmentLoading = ref(false)
 const assignmentFile = ref(null)
-const rules = ref([])
-const selectedRuleId = ref(null)
 
 const editingId = ref(null)
 const editScore = ref(0)
 const aiLoading = ref(false)
 
 onMounted(loadClasses)
-onMounted(async ()=>{
-  try{
-    const r = await api.get('/api/v1/assignments/rules')
-    rules.value = r.data
-  }catch(e){ /* ignore */ }
-})
 
 async function loadClasses() {
   const res = await api.get('/api/v1/classes/my')
@@ -389,16 +375,16 @@ async function createAssignment() {
     formData.append('description', newAssignment.description || '')
     formData.append('deadline', new Date(newAssignment.deadline).toISOString())
     formData.append('max_score', newAssignment.max_score)
+    if (newAssignment.grading_criteria) formData.append('grading_criteria', newAssignment.grading_criteria)
     if (assignmentFile.value) {
       formData.append('file', assignmentFile.value)
     }
-    if (selectedRuleId.value) formData.append('rule_id', selectedRuleId.value)
     await api.post('/api/v1/assignments/', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     showCreateAssignment.value = false
     assignmentFile.value = null
-    Object.assign(newAssignment, { title: '', description: '', deadline: '', max_score: 100 })
+    Object.assign(newAssignment, { title: '', description: '', deadline: '', max_score: 100, grading_criteria: '' })
     await selectClass(selectedClass.value)
   } catch (err) {
     assignmentError.value = err.response?.data?.detail || '发布失败'
@@ -479,8 +465,8 @@ async function createAssignmentFromTemplate() {
     formData.append('template_id', selectedTemplate.value.id)
     formData.append('deadline', new Date(templateDeadline.value).toISOString())
     formData.append('max_score', templateMaxScore.value)
-    if (templateSelectedRuleId.value) {
-      formData.append('rule_id', templateSelectedRuleId.value)
+    if (templateGradingCriteria.value) {
+      formData.append('grading_criteria', templateGradingCriteria.value)
     }
     await api.post('/api/v1/assignments/from-template', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
@@ -489,7 +475,7 @@ async function createAssignmentFromTemplate() {
     selectedTemplate.value = null
     templateDeadline.value = ''
     templateMaxScore.value = ''
-    templateSelectedRuleId.value = null
+    templateGradingCriteria.value = ''
     assignmentMode.value = 'new'
     await selectClass(selectedClass.value)
   } catch (err) {

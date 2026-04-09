@@ -86,6 +86,7 @@ class Assignment(Base):
     description = Column(Text, nullable=True)
     deadline = Column(DateTime, nullable=False)
     max_score = Column(Integer, nullable=False, default=100)
+    grading_criteria = Column(Text, nullable=True)  # 教师自定义的评分标准
     created_at = Column(DateTime, default=datetime.utcnow)
 
     class_ = relationship("Class", back_populates="assignments")
