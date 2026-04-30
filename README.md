@@ -97,7 +97,7 @@ edu-tool-subsystem/
 
 ```env
 # 数据库配置
-DATABASE_URL=mysql+pymysql://root:USTB@SH2026@39.107.241.146:3306/zsgc_d
+DATABASE_URL=your_dataset_url
 
 # JWT 认证
 SECRET_KEY=dev-secret-key-change-in-production
